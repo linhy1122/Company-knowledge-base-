@@ -14,8 +14,12 @@ export interface Source {
 export interface Conversation {
   id: number
   title: string | null
+  archived?: boolean | null
   createdAt: string
 }
+
+/** 会话列表筛选范围 */
+export type ConvScope = 'active' | 'all' | 'archived'
 
 /** 历史消息（GET /api/conversations/{id}/messages 返回项） */
 export interface Message {
@@ -37,9 +41,9 @@ export interface SendMessageResult {
 
 /* ---------------- 会话 ---------------- */
 
-/** 我的会话列表（按创建时间倒序） */
-export function listConversations() {
-  return http.get<Conversation[]>('/conversations')
+/** 我的会话列表（scope: active 进行中 / archived 已归档 / all 全部，默认 active） */
+export function listConversations(scope: ConvScope = 'active') {
+  return http.get<Conversation[]>('/conversations', { params: { scope } })
 }
 
 /** 新建会话（title 可空，首条消息后由后端自动填充标题） */
@@ -47,7 +51,22 @@ export function createConversation(title?: string) {
   return http.post<Conversation>('/conversations', title ? { title } : {})
 }
 
-/** 删除会话（级联删除其全部消息） */
+/** 重命名会话（title 可空即为不修改；modelId/kbIds 预留） */
+export function updateConversation(id: number, data: Partial<{ title: string }>) {
+  return http.put<Conversation>(`/conversations/${id}`, data)
+}
+
+/** 归档 / 取消归档会话（列表隐藏，可恢复；不代表删除） */
+export function setConversationArchived(id: number, archived: boolean) {
+  return http.put<void>(`/conversations/${id}/archive`, { archived })
+}
+
+/** 跨会话续接：以 id 会话为源复制出新会话（含历史），返回新会话 */
+export function forkConversation(id: number, title?: string) {
+  return http.post<Conversation>(`/conversations/${id}/fork`, title ? { title } : {})
+}
+
+/** 删除会话（级联删除其全部消息，硬删） */
 export function deleteConversation(id: number) {
   return http.delete<void>(`/conversations/${id}`)
 }

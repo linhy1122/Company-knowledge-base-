@@ -81,7 +81,7 @@ create table if not exists conversation (
   user_id bigint not null,
   title varchar(128) null,
   department_id bigint null,
-  status tinyint not null default 1,
+  status tinyint not null default 1,       -- 1 正常 / 0 已归档
   created_at datetime not null default current_timestamp,
   updated_at datetime not null default current_timestamp on update current_timestamp,
   key idx_user (user_id)
