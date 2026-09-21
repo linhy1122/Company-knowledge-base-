@@ -25,7 +25,7 @@ public class RagChatService {
     private static final Logger log = LoggerFactory.getLogger(RagChatService.class);
 
     /** 拒答兜底文案（与前端契约一致）。 */
-    private static final String FALLBACK_REFUSE = "当前企业知识库中未找到足够可靠的信息，建议联系相关部门确认。";
+    public static final String FALLBACK_REFUSE = "当前企业知识库中未找到足够可靠的信息，建议联系相关部门确认。";
 
     private static final String SYSTEM_PROMPT = """
             你是企业内部知识库智能助手。请严格依据提供的检索片段回答用户问题：
@@ -65,10 +65,13 @@ public class RagChatService {
         this.access = access;
     }
 
-    /** 一次问答：权限过滤检索 → 阈值定答 → 多轮历史+上下文生成。sources 为用于取答的引用片段。 */
-    public ChatResult chat(Long userId, Long conversationId, String question) {
-        long start = System.currentTimeMillis();
+    /**
+     * 生成前阶段：权限过滤检索 → 阈值定答 → Rerank → 拼 Prompt，返回 {system, user, sources, answered, similarity}。
+     * 流式与非流式共用本方法，保证两种入口的检索结论、阈值判定与来源完全一致。
+     */
+    public ChatPlan prepare(Long userId, Long conversationId, String question) {
         String filter = permissionService.buildVectorFilter(userId);
+        long start = System.currentTimeMillis();
         List<RetrievedChunk> hits = retrieveService.retrieve(question, rag.getTopK(), filter);
 
         // 阈值过滤：低于 similarity-threshold 视为无可靠依据
@@ -79,21 +82,11 @@ public class RagChatService {
                 .toList();
         if (relevant.isEmpty()) {
             // 知识库无可靠片段：让 AI 自主判断——可调用天气工具回答实时查询，否则返回拒答文案
-            log.info("[RagChat] 检索片段不足，转工具兜底（最高分 {}，filter={}），耗时 {}ms",
-                    hits.isEmpty() ? "N/A" : String.format("%.4f", hits.get(0).similarity()),
+            double best = hits.isEmpty() ? 0.0 : hits.get(0).similarity();
+            log.info("[RagChat] prepare 检索片段不足，转工具兜底（最高分 {}，filter={}），耗时 {}ms",
+                    hits.isEmpty() ? "N/A" : String.format("%.4f", best),
                     filter, System.currentTimeMillis() - start);
-            String toolAnswer = chatClient.prompt()
-                    .system(TOOL_FALLBACK_SYSTEM_PROMPT)
-                    .user(question)
-                    .call()
-                    .content();
-            if (toolAnswer == null || toolAnswer.isBlank() || toolAnswer.contains(FALLBACK_REFUSE)) {
-                return new ChatResult(FALLBACK_REFUSE, List.of(), false,
-                        hits.isEmpty() ? 0.0 : hits.get(0).similarity());
-            }
-            log.info("[RagChat] 通过工具回答成功，耗时 {}ms", System.currentTimeMillis() - start);
-            return new ChatResult(toolAnswer.strip(), List.of(), true,
-                    hits.isEmpty() ? 0.0 : hits.get(0).similarity());
+            return new ChatPlan(TOOL_FALLBACK_SYSTEM_PROMPT, question, List.of(), false, best);
         }
 
         // Rerank：取相似度最高的前 rerankTop 条作为来源上下文
@@ -113,17 +106,40 @@ public class RagChatService {
                 %s
                 """.formatted(question, history, context);
 
+        log.info("[RagChat] prepare 定答（相似度 {}/{}，共引用 {} 条，filter={}），耗时 {}ms",
+                best, threshold, sources.size(), filter, System.currentTimeMillis() - start);
+        return new ChatPlan(SYSTEM_PROMPT, userPrompt, sources, true, best);
+    }
+
+    /** 一次问答：权限过滤检索 → 阈值定答 → 多轮历史+上下文生成。sources 为用于取答的引用片段。 */
+    public ChatResult chat(Long userId, Long conversationId, String question) {
+        long start = System.currentTimeMillis();
+        ChatPlan plan = prepare(userId, conversationId, question);
+
         String answer = chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(userPrompt)
+                .system(plan.systemPrompt())
+                .user(plan.userPrompt())
                 .call()
                 .content();
+        double best = plan.similarity();
         if (answer == null || answer.isBlank()) {
             return new ChatResult(FALLBACK_REFUSE, List.of(), false, best);
         }
-        log.info("[RagChat] 定答（相似度 {}/{}，共引用 {} 条，filter={}），耗时 {}ms",
-                best, threshold, sources.size(), filter, System.currentTimeMillis() - start);
-        return new ChatResult(answer.strip(), sources, true, best);
+        if (!plan.answered()) {
+            // 工具兜底路径：答到拒答文案视为拒答
+            if (answer.contains(FALLBACK_REFUSE)) {
+                return new ChatResult(FALLBACK_REFUSE, List.of(), false, best);
+            }
+            log.info("[RagChat] 通过工具回答成功，耗时 {}ms", System.currentTimeMillis() - start);
+            return new ChatResult(answer.strip(), List.of(), true, best);
+        }
+        log.info("[RagChat] 定答，耗时 {}ms", System.currentTimeMillis() - start);
+        return new ChatResult(answer.strip(), plan.sources(), true, best);
+    }
+
+    /** 暴露配置好工具链的 ChatClient，供流式链路调用（与阻塞版同一实例，工具/模型一致）。 */
+    public ChatClient chatClient() {
+        return chatClient;
     }
 
     /** 取会话最近 N 条消息作为多轮上下文（USER/ASSISTANT 交替，按 id 升序）。 */

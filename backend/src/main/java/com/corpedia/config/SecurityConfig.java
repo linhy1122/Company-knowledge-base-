@@ -4,6 +4,7 @@ import com.corpedia.common.Result;
 import com.corpedia.common.ResultCode;
 import com.corpedia.security.JwtAuthFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -55,6 +56,8 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE(SseEmitter)/错误页的异步与错误分派不重复鉴权：初请求已由 JWT 鉴权，ASYNC/ERROR 分派放行以免命中匿名拒绝
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers("/auth/login", "/actuator/health").permitAll()
                         // Knife4j / springdoc 文档访问（静态资源也经 DispatcherServlet，受 servlet path=/api 前缀影响 → 实际为 /api/doc.html、/api/webjars/**）
                         .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**", "/favicon.ico").permitAll()

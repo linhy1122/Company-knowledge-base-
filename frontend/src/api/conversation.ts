@@ -1,4 +1,4 @@
-import { http } from '@/utils/request'
+import { http, getToken } from '@/utils/request'
 
 /** 答案来源片段（SourceVO：documentId / title / chunkId / similarity，功能扩展01 增高亮区间） */
 export interface Source {
@@ -81,6 +81,84 @@ export function getConversationMessages(id: number) {
 /** 提问并回答：检索 → 生成 → 落库（user + assistant 两条）→ 返回答案 */
 export function sendMessage(data: { conversationId: number; content: string }) {
   return http.post<SendMessageResult>('/messages', data, { timeout: 180000 })
+}
+
+/* ---------------- 流式问答（功能扩展04，SSE 打字机） ---------------- */
+
+/** SSE 事件回调（事件顺序：meta → sources → delta… → done；异常发 error）。 */
+export interface StreamHandlers {
+  onMeta?: (m: { conversationId: number }) => void
+  onSources?: (d: { sources: Source[]; answered: boolean; similarity?: number }) => void
+  onDelta: (text: string) => void
+  onDone: (d: { messageId: number; content: string; answered: boolean }) => void
+  onError?: (msg: string) => void
+}
+
+/**
+ * 流式提问：POST /api/messages/stream，用 fetch + ReadableStream 逐事件解析（含增量 text 打字机）。
+ * 非流式接口不可用时（404/断连）会抛错，调用方回退到 sendMessage。
+ */
+export async function streamMessage(
+  conversationId: number,
+  content: string,
+  h: StreamHandlers,
+  signal?: AbortSignal
+) {
+  const base = import.meta.env.VITE_API_BASE_URL || '/api'
+  const res = await fetch(`${base}/messages/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`
+    },
+    body: JSON.stringify({ conversationId, content }),
+    signal
+  })
+  if (!res.ok || !res.body) {
+    throw new Error(`流式请求失败：HTTP ${res.status}`)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    // 按空行切分 SSE 事件块（每个事件 data: <json>\n\n）
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      for (const line of block.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (!data) continue
+        let ev: { type: string; [k: string]: unknown }
+        try {
+          ev = JSON.parse(data)
+        } catch {
+          continue
+        }
+        switch (ev.type) {
+          case 'meta':
+            h.onMeta?.(ev as unknown as { conversationId: number })
+            break
+          case 'sources':
+            h.onSources?.(ev as unknown as { sources: Source[]; answered: boolean; similarity?: number })
+            break
+          case 'delta':
+            h.onDelta((ev.content as string) ?? '')
+            break
+          case 'done':
+            h.onDone(ev as unknown as { messageId: number; content: string; answered: boolean })
+            break
+          case 'error':
+            h.onError?.((ev.message as string) || '生成失败')
+            break
+        }
+      }
+    }
+  }
 }
 
 /* ---------------- 评价（P1，后端阶段 4 提供） ---------------- */

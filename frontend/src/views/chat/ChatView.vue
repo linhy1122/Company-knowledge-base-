@@ -16,6 +16,8 @@ import {
   forkConversation,
   getConversationMessages,
   sendMessage,
+  streamMessage,
+  type Source,
   type Conversation,
   type ConvScope
 } from '@/api/conversation'
@@ -233,15 +235,74 @@ async function send() {
     messages.value.push({ uid: nextUid(), role: 'USER', content: text })
     messages.value.push({ uid: placeholderUid, role: 'ASSISTANT', content: '', loading: true })
     await scrollToBottom()
-    const res = await sendMessage({ conversationId: convId, content: text })
-    replaceMessage(placeholderUid, {
-      uid: placeholderUid,
-      id: res.messageId,
-      role: 'ASSISTANT',
-      content: res.content,
-      sources: res.sources || null,
-      answered: res.answered
-    })
+
+    // 流式优先（打字机 + 先渲染来源）；失败则回退非流式完整返回
+    let acc = ''
+    let sources: Source[] | null = null
+    let sourcesAnswered: boolean | undefined
+    let settled = false
+    try {
+      await streamMessage(convId, text, {
+        onSources: (d) => {
+          sources = d.sources || null
+          sourcesAnswered = d.answered
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            role: 'ASSISTANT',
+            content: acc,
+            loading: true,
+            sources,
+            answered: sourcesAnswered
+          })
+        },
+        onDelta: (t) => {
+          acc += t
+          // 有增量即停止“生成中”占位，展示逐字拼接文本（打字机）
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            role: 'ASSISTANT',
+            content: acc,
+            loading: acc.length === 0,
+            sources,
+            answered: sourcesAnswered
+          })
+          scrollToBottom()
+        },
+        onDone: (d) => {
+          settled = true
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            id: d.messageId,
+            role: 'ASSISTANT',
+            content: d.content,
+            sources,
+            answered: d.answered
+          })
+        },
+        onError: () => {
+          settled = true
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            role: 'ASSISTANT',
+            content: '回答失败，请稍后重试',
+            error: true
+          })
+        }
+      })
+    } catch {
+      // 流式不可用（404/断连）→ 回退非流式
+      if (!settled) {
+        const res = await sendMessage({ conversationId: convId, content: text })
+        replaceMessage(placeholderUid, {
+          uid: placeholderUid,
+          id: res.messageId,
+          role: 'ASSISTANT',
+          content: res.content,
+          sources: res.sources || null,
+          answered: res.answered
+        })
+      }
+    }
     // 首轮问答后会话标题被后端自动填充，刷新列表标题
     if (isFirstExchange) {
       await loadConversations()
