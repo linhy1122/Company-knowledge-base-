@@ -113,6 +113,11 @@ export function reprocessDocument(id: number) {
   return http.post<ProcessResult>(`/documents/${id}/reprocess`)
 }
 
+/** 一键重新向量化某知识库下所有已导入文档（返回触发数量） */
+export function reprocessAllDocuments(kbId: number) {
+  return http.post<number>(`/kb/${kbId}/documents/reprocess-all`)
+}
+
 /** 修改文档权限 / 所属部门 */
 export function updateDocumentPermission(
   id: number,

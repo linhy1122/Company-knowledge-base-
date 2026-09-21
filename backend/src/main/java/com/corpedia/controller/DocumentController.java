@@ -96,6 +96,15 @@ public class DocumentController {
         return Result.ok(new ProcessResultVO(id, Constants.DOC_PARSING));
     }
 
+    /** 一键重新向量化（SYS_ADMIN / DEPT_ADMIN）：对知识库下所有 READY/FAILED 文档重新入库，PARSING 跳过。 */
+    @Operation(summary = "一键重新向量化知识库", description = "对指定知识库下所有 READY/FAILED 文档重新解析分块嵌入（PARSING 中的跳过）")
+    @PostMapping("/kb/{kbId}/documents/reprocess-all")
+    public Result<Integer> reprocessAll(@Parameter(description = "知识库 id") @PathVariable Long kbId) {
+        permissionService.requireDocManage(UserContextHolder.get());
+        int triggered = documentService.reprocessAll(kbId);
+        return Result.ok(triggered);
+    }
+
     /** 修改文档权限/所属部门（SYS_ADMIN / DEPT_ADMIN），异步重向量化生效。 */
     @Operation(summary = "修改文档权限/所属部门", description = "更新后异步重新向量化；body: { permissionLevel, departmentId? }")
     @PutMapping("/documents/{id}/permission")

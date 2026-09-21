@@ -167,6 +167,29 @@ public class DocumentService {
         pipeline.ingest(id);
     }
 
+    /**
+     * 一键重新向量化（P1）：对指定知识库下所有 READY/FAILED 文档重新入库；
+     * 正在 PARSING 的文档跳过（避免并发管道）。返回本次触发重新向量化的文档数。
+     */
+    public int reprocessAll(Long kbId) {
+        kbService.requireKb(kbId);
+        List<KbDocument> docs = documentMapper.selectList(new QueryWrapper<KbDocument>()
+                        .eq("kb_id", kbId)
+                        .ne("status", Constants.DOC_PARSING))
+                .stream().filter(access::canRead).toList();
+        int triggered = 0;
+        for (KbDocument doc : docs) {
+            if (!access.canRead(doc)) {
+                continue;
+            }
+            doc.setStatus(Constants.DOC_PARSING);
+            documentMapper.updateById(doc);
+            pipeline.ingest(doc.getId());
+            triggered++;
+        }
+        return triggered;
+    }
+
     /** 修改文档权限/所属部门（P1）：更新行后异步重向量化，使 Milvus metadata 生效。 */
     @Transactional
     public void updatePermission(Long id, DocumentPermissionRequest req) {

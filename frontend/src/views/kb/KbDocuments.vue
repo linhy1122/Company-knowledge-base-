@@ -15,6 +15,7 @@ import {
   deleteDocument,
   getDocumentChunks,
   reprocessDocument,
+  reprocessAllDocuments,
   updateDocumentPermission,
   listDepartments,
   type DocumentItem,
@@ -228,6 +229,25 @@ async function handleReprocess(doc: DocumentItem) {
   await fetchDocuments(false)
 }
 
+/* ---------------- P1：一键重新向量化全部 ---------------- */
+async function handleReprocessAll() {
+  try {
+    await ElMessageBox.confirm(
+      `确定对当前知识库下所有已导入文档重新向量化吗？`,
+      '一键重新向量化',
+      { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  const triggered = await reprocessAllDocuments(kbId)
+  ElMessage.success(triggered > 0 ? `已触发 ${triggered} 篇文档重新向量化` : '没有需要重新向量化的文档')
+  if (triggered > 0) {
+    await fetchDocuments(false)
+    ElMessage.info('处理需异步完成，请稍后刷新查看最新状态')
+  }
+}
+
 /* ---------------- P1：权限/部门设置 ---------------- */
 const departments = ref<Department[]>([])
 const permDialogVisible = ref(false)
@@ -297,12 +317,23 @@ onUnmounted(stopAutoRefresh)
             <el-button link type="primary" :icon="ArrowLeft" @click="goBack">返回</el-button>
             <span class="doc-title">{{ kbName }} · 文档管理</span>
           </div>
-          <el-radio-group v-model="statusFilter" size="small">
-            <el-radio-button value="">全部</el-radio-button>
-            <el-radio-button value="PARSING">解析中</el-radio-button>
-            <el-radio-button value="READY">已就绪</el-radio-button>
-            <el-radio-button value="FAILED">失败</el-radio-button>
-          </el-radio-group>
+          <div class="doc-header-right">
+            <el-radio-group v-model="statusFilter" size="small">
+              <el-radio-button value="">全部</el-radio-button>
+              <el-radio-button value="PARSING">解析中</el-radio-button>
+              <el-radio-button value="READY">已就绪</el-radio-button>
+              <el-radio-button value="FAILED">失败</el-radio-button>
+            </el-radio-group>
+            <el-button
+              v-if="canManage"
+              type="primary"
+              plain
+              size="small"
+              @click="handleReprocessAll"
+            >
+              全部重新向量化
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -436,6 +467,11 @@ onUnmounted(stopAutoRefresh)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.doc-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .doc-title {
   font-weight: 600;
