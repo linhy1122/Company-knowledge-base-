@@ -39,4 +39,7 @@ public final class Constants {
     public static final String META_PERMISSION_LEVEL = "permission_level";
     public static final String META_CATEGORY = "category";
     public static final String META_SOURCE = "source";
+    // 功能扩展01: chunk 在原文清洗后文本中的字符区间（引用溯源/原文高亮定位）
+    public static final String META_CHUNK_START = "chunk_start";
+    public static final String META_CHUNK_END = "chunk_end";
 }

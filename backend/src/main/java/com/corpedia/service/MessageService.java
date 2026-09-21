@@ -69,13 +69,13 @@ public class MessageService {
         assistant.setResponseMs(elapsedMs);
         if (!result.sources().isEmpty()) {
             assistant.setSources(toJson(result.sources().stream()
-                    .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity()))
+                    .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity(), c.chunkStart(), c.chunkEnd()))
                     .toList()));
         }
         messageMapper.insert(assistant);
 
         List<SourceVO> sources = result.sources().stream()
-                .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity()))
+                .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity(), c.chunkStart(), c.chunkEnd()))
                 .toList();
         return new SendMessageResultVO(assistant.getId(), result.content(), sources, result.answered());
     }

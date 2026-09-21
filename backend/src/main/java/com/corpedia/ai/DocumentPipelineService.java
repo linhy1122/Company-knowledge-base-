@@ -93,6 +93,7 @@ public class DocumentPipelineService {
             vectorStore.add(chunks);
             doc.setStatus(Constants.DOC_READY);
             doc.setChunkCount(chunks.size());
+            doc.setCleanedText(cleaned);   // 功能扩展01: 持久化清洗后全文，供引用溯源/原文高亮
             documentMapper.updateById(doc);
             log.info("[Pipeline] 文档 {} ({}) 入库完成, chunks={}", doc.getId(), doc.getFilename(), chunks.size());
         } catch (Exception e) {

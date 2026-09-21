@@ -70,6 +70,7 @@ create table if not exists document (
   permission_level varchar(32) not null default 'PUBLIC',
   department_id bigint null,                     -- 阶段4: 文档级所属部门(上传时快照自知识库; 权限设置可独立修改), 可空=全司
   uploaded_by bigint null,
+  cleaned_text longtext null,                    -- 功能扩展01: 清洗后全文(引用溯源/原文高亮用); 解析失败可为 null
   created_at datetime not null default current_timestamp,
   updated_at datetime not null default current_timestamp on update current_timestamp,
   key idx_kb (kb_id)

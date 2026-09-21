@@ -8,6 +8,8 @@ public record RetrievedChunk(
         String title,
         String chunkId,
         String content,
-        double similarity
+        double similarity,
+        Integer chunkStart,
+        Integer chunkEnd
 ) {
 }

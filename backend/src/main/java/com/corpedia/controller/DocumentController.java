@@ -2,6 +2,7 @@ package com.corpedia.controller;
 
 import com.corpedia.common.Result;
 import com.corpedia.dto.request.DocumentPermissionRequest;
+import com.corpedia.dto.response.DocContextVO;
 import com.corpedia.dto.response.DocumentChunkVO;
 import com.corpedia.dto.response.DocumentVO;
 import com.corpedia.dto.response.ProcessResultVO;
@@ -85,6 +86,17 @@ public class DocumentController {
     @GetMapping("/documents/{id}/chunks")
     public Result<List<DocumentChunkVO>> chunks(@Parameter(description = "文档 id") @PathVariable Long id) {
         return Result.ok(documentService.listChunks(id));
+    }
+
+    /** 功能扩展01：文档原文上下文（引用溯源高亮）。chunkStart/chunkEnd 为高亮区间，before/after 为上下文窗口长度。 */
+    @Operation(summary = "文档原文上下文", description = "按 chunk 字符区间返回前/高亮/后三段；cleaned_text 未就绪返回 400")
+    @GetMapping("/documents/{id}/context")
+    public Result<DocContextVO> context(@Parameter(description = "文档 id") @PathVariable Long id,
+                                        @Parameter(description = "高亮区间起点") @RequestParam(required = false) Integer chunkStart,
+                                        @Parameter(description = "高亮区间终点") @RequestParam(required = false) Integer chunkEnd,
+                                        @Parameter(description = "前文窗口长度") @RequestParam(defaultValue = "800") int before,
+                                        @Parameter(description = "后文窗口长度") @RequestParam(defaultValue = "800") int after) {
+        return Result.ok(documentService.getContext(id, chunkStart, chunkEnd, before, after));
     }
 
     /** 重新向量化（SYS_ADMIN / DEPT_ADMIN）。 */

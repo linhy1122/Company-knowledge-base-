@@ -9,6 +9,7 @@ import {
   listKnowledgeBases,
   createKnowledgeBase,
   deleteKnowledgeBase,
+  reprocessAllDocuments,
   listDepartments,
   type KnowledgeBase,
   type Department,
@@ -128,6 +129,21 @@ function goDocuments(kb: KnowledgeBase) {
   router.push({ path: `/kb/${kb.id}/documents`, query: { name: kb.name } })
 }
 
+/* ---------------- 一键重新向量化知识库 ---------------- */
+async function handleReprocessAll(kb: KnowledgeBase) {
+  try {
+    await ElMessageBox.confirm(
+      `确定重新向量化「${kb.name}」下的全部文档吗？正在解析(PARSING)的会跳过，其余将重新解析分块并生成新向量。`,
+      '重新向量化确认',
+      { type: 'warning', confirmButtonText: '重新向量化', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  const triggered = await reprocessAllDocuments(kb.id)
+  ElMessage.success(triggered > 0 ? `已触发 ${triggered} 个文档重新向量化` : '没有需要重新向量化的文档')
+}
+
 onMounted(() => {
   fetchList()
   fetchDepartments()
@@ -161,9 +177,15 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goDocuments(row)">文档管理</el-button>
+            <el-button
+              v-if="canManage(row.departmentId)"
+              link
+              type="warning"
+              @click="handleReprocessAll(row)"
+            >重新向量化</el-button>
             <el-button v-if="canManage(row.departmentId)" link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>

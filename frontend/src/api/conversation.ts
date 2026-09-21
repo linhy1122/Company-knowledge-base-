@@ -1,11 +1,13 @@
 import { http } from '@/utils/request'
 
-/** 答案来源片段（SourceVO：documentId / title / chunkId / similarity） */
+/** 答案来源片段（SourceVO：documentId / title / chunkId / similarity，功能扩展01 增高亮区间） */
 export interface Source {
   documentId: number
   title: string
   chunkId: string
   similarity: number
+  chunkStart?: number
+  chunkEnd?: number
 }
 
 /** 会话（GET/POST /api/conversations 返回项） */
