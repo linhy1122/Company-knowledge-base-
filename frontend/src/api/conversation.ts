@@ -43,7 +43,7 @@ export interface SendMessageResult {
 
 /** 我的会话列表（scope: active 进行中 / archived 已归档 / all 全部，默认 active） */
 export function listConversations(scope: ConvScope = 'active') {
-  return http.get<Conversation[]>('/conversations', { params: { scope } })
+  return http.get<Conversation[]>('/conversations', { scope })
 }
 
 /** 新建会话（title 可空，首条消息后由后端自动填充标题） */

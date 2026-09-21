@@ -493,3 +493,4 @@ onMounted(loadConversations)
   color: var(--el-text-color-placeholder);
 }
 </style>
+
