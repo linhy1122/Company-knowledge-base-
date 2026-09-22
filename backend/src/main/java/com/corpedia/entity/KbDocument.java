@@ -19,6 +19,7 @@ public class KbDocument {
     private Long kbId;
     private String filename;
     private String filePath;
+    private String fileHash;            // 文件内容 SHA-256，用于同库查重
     private String fileType;            // md/pdf/docx/txt
     private Long size;
     private String status;              // PARSING / READY / FAILED

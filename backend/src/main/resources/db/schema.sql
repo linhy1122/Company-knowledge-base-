@@ -63,6 +63,7 @@ create table if not exists document (
   kb_id bigint not null,
   filename varchar(255) not null,
   file_path varchar(512) not null,
+  file_hash varchar(64) null,              -- 文件内容 SHA-256，用于同库查重
   file_type varchar(16) not null,          -- md/pdf/docx/txt
   size bigint not null default 0,
   status varchar(16) not null default 'PARSING', -- PARSING/READY/FAILED

@@ -9,11 +9,12 @@ import org.springframework.web.filter.CorsFilter;
 import java.util.List;
 
 /**
- * CORS 配置：开发环境前端直连 / 代理均可能跨域，统一放行。
  * 生产可按需收紧 allowedOrigins。
+ * CORS 配置：开发环境前端直连 / 代理均可能跨域，统一放行。
  */
 @Configuration
 public class CorsConfig {
+
 
     @Bean
     public CorsFilter corsFilter() {

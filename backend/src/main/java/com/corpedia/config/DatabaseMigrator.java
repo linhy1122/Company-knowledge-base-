@@ -28,6 +28,7 @@ public class DatabaseMigrator implements CommandLineRunner {
         migrateAddDocumentDepartmentId();
         migrateAddMessageResponseMs();
         migrateAddDocumentCleanedText();
+        migrateAddDocumentFileHash();
     }
 
     private void migrateAddDocumentDepartmentId() {
@@ -69,6 +70,20 @@ public class DatabaseMigrator implements CommandLineRunner {
         }
         jdbc.execute("alter table document add column cleaned_text longtext null comment '清洗后全文(引用溯源/原文高亮用); 解析失败可为 null'");
         log.info("[DatabaseMigrator] document.cleaned_text 已补齐");
+    }
+
+    /** 阶段6: 为 document 表补 file_hash 列（同库查重）。 */
+    private void migrateAddDocumentFileHash() {
+        String sql = """
+                select count(*) from information_schema.columns
+                where table_schema = database() and table_name = 'document' and column_name = 'file_hash'
+                """;
+        Integer cnt = jdbc.queryForObject(sql, Integer.class);
+        if (cnt != null && cnt > 0) {
+            return;
+        }
+        jdbc.execute("alter table document add column file_hash varchar(64) null comment '文件内容 SHA-256，用于同库查重'");
+        log.info("[DatabaseMigrator] document.file_hash 已补齐");
     }
 
     /** 占位：后续迁移在此追加（如新增表/索引），保持顺序执行。 */

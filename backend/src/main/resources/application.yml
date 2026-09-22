@@ -58,8 +58,7 @@ spring:
 # 业务自定义配置
 corpedia:
   jwt:
-    # 生产/部署请通过 JWT_SECRET 环境变量注入；此处开发默认值保证本地直接启动可用（>= 256 bits）
-    secret: ${JWT_SECRET:corpedia-dev-only-secret-change-in-prod-0123456789abcdef}
+    secret: ${JWT_SECRET}
     expire-seconds: 86400          # 24h
   storage:
     path: ./storage/documents      # 上传文件落盘目录（相对 backend/ 运行目录）

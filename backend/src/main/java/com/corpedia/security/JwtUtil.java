@@ -21,7 +21,21 @@ public class JwtUtil {
 
     public JwtUtil(JwtProperties props) {
         this.props = props;
-        this.key = Keys.hmacShaKeyFor(props.getSecret().getBytes(StandardCharsets.UTF_8));
+        this.key = buildKey(props.getSecret());
+    }
+
+    /** 构造签名密钥：JWT 要求 HMAC-SHA 至少 256 位，过短时用 SHA-256 派生，保证跨重启稳定。 */
+    private static SecretKey buildKey(String secret) {
+        byte[] raw = (secret == null ? "" : secret).getBytes(StandardCharsets.UTF_8);
+        if (raw.length < 32) {
+            try {
+                byte[] derived = java.security.MessageDigest.getInstance("SHA-256").digest(raw);
+                return Keys.hmacShaKeyFor(derived);
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 算法不可用", e);
+            }
+        }
+        return Keys.hmacShaKeyFor(raw);
     }
 
     public String generate(UserContext ctx) {

@@ -70,6 +70,13 @@ public class DocumentService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "仅支持 md/pdf/docx/txt 格式");
         }
         try {
+            String fileHash = sha256(file.getInputStream());
+            // 防重复：同一知识库内禁止上传内容相同的文件
+            Long dup = documentMapper.selectCount(new QueryWrapper<KbDocument>()
+                    .eq("kb_id", kbId).eq("file_hash", fileHash));
+            if (dup != null && dup > 0) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "该文档已存在于当前知识库，请勿重复上传");
+            }
             Path dir = Path.of(storage.getPath(), String.valueOf(kbId)).toAbsolutePath().normalize();
             Files.createDirectories(dir);
             String storedName = UUID.randomUUID().toString().replace("-", "") + "_" + filename;
@@ -81,6 +88,7 @@ public class DocumentService {
             doc.setKbId(kbId);
             doc.setFilename(filename);
             doc.setFilePath(target.toAbsolutePath().toString());
+            doc.setFileHash(fileHash);
             doc.setFileType(ext);
             doc.setSize(file.getSize());
             doc.setStatus(Constants.DOC_PARSING);
@@ -273,6 +281,31 @@ public class DocumentService {
     private String extensionOf(String filename) {
         int idx = filename.lastIndexOf('.');
         return idx < 0 ? "" : filename.substring(idx + 1).toLowerCase();
+    }
+
+    /** 计算文件内容 SHA-256（小写十六进制），用于同库查重。 */
+    private String sha256(java.io.InputStream in) throws IOException {
+        try {
+            java.security.MessageDigest md;
+            try {
+                md = java.security.MessageDigest.getInstance("SHA-256");
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 算法不可用", e);
+            }
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                md.update(buf, 0, n);
+            }
+            byte[] digest = md.digest();
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } finally {
+            in.close();
+        }
     }
 
     private DocumentVO toVO(KbDocument d) {
