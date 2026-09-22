@@ -44,10 +44,15 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const documents = ref<DocumentItem[]>([])
 const loading = ref(false)
 const statusFilter = ref<'' | DocumentStatus>('')
+const filenameKeyword = ref('')
 
-const filteredDocs = computed(() =>
-  statusFilter.value ? documents.value.filter((d) => d.status === statusFilter.value) : documents.value
-)
+const filteredDocs = computed(() => {
+  const keyword = filenameKeyword.value.trim().toLowerCase()
+  return documents.value.filter((doc) =>
+    (!statusFilter.value || doc.status === statusFilter.value) &&
+    (!keyword || (doc.filename ?? '').toLowerCase().includes(keyword))
+  )
+})
 
 const statusMap: Record<DocumentStatus, { label: string; type: 'success' | 'warning' | 'danger' }> = {
   PARSING: { label: '解析中', type: 'warning' },
@@ -318,6 +323,7 @@ onUnmounted(stopAutoRefresh)
             <span class="doc-title">{{ kbName }} · 文档管理</span>
           </div>
           <div class="doc-header-right">
+            <el-input v-model="filenameKeyword" clearable placeholder="搜索文件名" style="width: 180px" />
             <el-radio-group v-model="statusFilter" size="small">
               <el-radio-button value="">全部</el-radio-button>
               <el-radio-button value="PARSING">解析中</el-radio-button>
