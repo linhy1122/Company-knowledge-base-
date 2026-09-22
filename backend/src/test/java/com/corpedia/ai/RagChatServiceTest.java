@@ -23,14 +23,14 @@ class RagChatServiceTest {
         verify(builder.build(),never()).prompt();
     }
     @Test void revokedDocumentIsExcludedBeforePromptConstruction() {
-        var hit = new RetrievedChunk(4L,"机密文件","doc-4-0","不得泄漏的文本",0.99);
+        var hit = new RetrievedChunk(4L,"机密文件","doc-4-0","不得泄漏的文本",0.99,null,null);
         when(retrieve.retrieve("policy",10,null)).thenReturn(List.of(hit));
         when(access.canUseSource(4L)).thenReturn(false);
         assertFalse(service.chat(1L,null,"policy").answered());
         verify(builder.build(),never()).prompt();
     }
     @Test void emptyModelResponseIsRecordedAsRefusal() {
-        var hit = new RetrievedChunk(4L,"员工手册","doc-4-0","年假说明",0.99);
+        var hit = new RetrievedChunk(4L,"员工手册","doc-4-0","年假说明",0.99,null,null);
         when(retrieve.retrieve("policy",10,null)).thenReturn(List.of(hit));
         when(access.canUseSource(4L)).thenReturn(true);
         when(retrieve.rerank(List.of(hit),3)).thenReturn(List.of(hit));

@@ -27,6 +27,7 @@ public class KbDocument {
     private String permissionLevel;     // 上传时继承所属知识库
     private Long departmentId;          // 文档级所属部门（上传时快照自知识库；权限设置可独立修改），可空=全司
     private Long uploadedBy;
+    private String cleanedText;         // 功能扩展01: 清洗后全文(引用溯源/原文高亮用)，可空
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

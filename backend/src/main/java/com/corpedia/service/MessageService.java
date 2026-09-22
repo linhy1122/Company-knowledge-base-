@@ -44,6 +44,11 @@ public class MessageService {
     @Transactional
     public SendMessageResultVO ask(Long userId, Long conversationId, String content) {
         Conversation conv = conversationService.requireConversation(userId, conversationId);
+        // 回访已归档会话 → 自动恢复为进行中（用户主动发消息即视为恢复）
+        if (conv.getStatus() != null && conv.getStatus() == 0) {
+            conv.setStatus(1);
+            conversationMapper.updateById(conv);
+        }
         // 首条消息自动填充会话标题（前端可能未显式命名）
         if (conv.getTitle() == null || conv.getTitle().isBlank()) {
             conv.setTitle(content.length() > 30 ? content.substring(0, 30) : content);
@@ -69,13 +74,13 @@ public class MessageService {
         assistant.setResponseMs(elapsedMs);
         if (!result.sources().isEmpty()) {
             assistant.setSources(toJson(result.sources().stream()
-                    .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity()))
+                    .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity(), c.chunkStart(), c.chunkEnd()))
                     .toList()));
         }
         messageMapper.insert(assistant);
 
         List<SourceVO> sources = result.sources().stream()
-                .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity()))
+                .map(c -> new SourceVO(c.documentId(), c.title(), c.chunkId(), c.similarity(), c.chunkStart(), c.chunkEnd()))
                 .toList();
         return new SendMessageResultVO(assistant.getId(), result.content(), sources, result.answered());
     }

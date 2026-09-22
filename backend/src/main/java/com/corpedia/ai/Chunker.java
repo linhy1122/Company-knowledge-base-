@@ -1,5 +1,6 @@
 package com.corpedia.ai;
 
+import com.corpedia.common.Constants;
 import com.corpedia.config.RagProperties;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Component;
@@ -40,10 +41,16 @@ public class Chunker {
                     end = nl;
                 }
             }
-            String chunkText = text.substring(start, end).strip();
+            String raw = text.substring(start, end);
+            String chunkText = raw.strip();
             if (!chunkText.isEmpty()) {
+                // 功能扩展01: 推算 strip 后子串在原文 text 中的首末字符区间，供引用溯源/原文高亮定位
+                int leadWs = raw.length() - raw.stripLeading().length();
+                int chunkStart = start + leadWs;
                 Map<String, Object> meta = new HashMap<>(metadata);
                 meta.put("chunk_index", idx);
+                meta.put(Constants.META_CHUNK_START, chunkStart);
+                meta.put(Constants.META_CHUNK_END, chunkStart + chunkText.length());
                 out.add(new Document("doc-" + documentId + "-" + idx, chunkText, meta));
             }
             if (end >= len) {

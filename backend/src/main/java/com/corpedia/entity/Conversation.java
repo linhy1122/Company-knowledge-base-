@@ -19,7 +19,7 @@ public class Conversation {
     private Long userId;
     private String title;
     private Long departmentId;          // 冗余用户当前部门（阶段4 权限用）
-    private Integer status;             // 1 正常 / 0 关闭
+    private Integer status;             // 1 正常 / 0 已归档
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

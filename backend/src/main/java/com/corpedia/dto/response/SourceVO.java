@@ -10,6 +10,8 @@ public record SourceVO(
         Long documentId,
         String title,
         String chunkId,
-        double similarity
+        double similarity,
+        Integer chunkStart,
+        Integer chunkEnd
 ) {
 }

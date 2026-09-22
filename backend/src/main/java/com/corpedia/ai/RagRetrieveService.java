@@ -63,6 +63,13 @@ public class RagRetrieveService {
         Object titleObj = d.getMetadata().get(Constants.META_TITLE);
         String title = titleObj == null ? "" : titleObj.toString();
         double score = d.getScore() == null ? 0.0 : d.getScore();
-        return new RetrievedChunk(docId, title, d.getId(), d.getText(), score);
+        // 功能扩展01: 读取 chunk 在原文中的字符区间（旧数据缺失时可空）
+        Integer chunkStart = asInt(d.getMetadata().get(Constants.META_CHUNK_START));
+        Integer chunkEnd = asInt(d.getMetadata().get(Constants.META_CHUNK_END));
+        return new RetrievedChunk(docId, title, d.getId(), d.getText(), score, chunkStart, chunkEnd);
+    }
+
+    private Integer asInt(Object v) {
+        return v instanceof Number n ? n.intValue() : null;
     }
 }

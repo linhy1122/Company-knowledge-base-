@@ -8,6 +8,7 @@ import com.corpedia.common.ResultCode;
 import com.corpedia.config.MilvusSchemaInitializer;
 import com.corpedia.config.StorageProperties;
 import com.corpedia.dto.request.DocumentPermissionRequest;
+import com.corpedia.dto.response.DocContextVO;
 import com.corpedia.dto.response.DocumentChunkVO;
 import com.corpedia.dto.response.DocumentVO;
 import com.corpedia.entity.KbDocument;
@@ -163,6 +164,48 @@ public class DocumentService {
         return milvus.queryChunksByDocumentId(id);
     }
 
+    /** 功能扩展01：取 chunk 区间在清洗后原文中的「前/中/后」三段上下文，供前端渲染并高亮。cleaned_text 未就绪时抛 400。 */
+    public DocContextVO getContext(Long id, Integer chunkStart, Integer chunkEnd, int beforeChars, int afterChars) {
+        KbDocument doc = requireDoc(id);
+        String cleaned = doc.getCleanedText();
+        if (cleaned == null || cleaned.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "原文尚未就绪，请先重向量化该文档");
+        }
+        if (chunkStart == null || chunkEnd == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "缺少高亮区间参数 chunkStart/chunkEnd");
+        }
+        int len = cleaned.length();
+        int cs = Math.max(0, Math.min(chunkStart, len));
+        int ce = Math.max(cs, Math.min(chunkEnd, len));
+        String highlight = cleaned.substring(cs, ce);
+
+        // before 窗口：从 chunkStart 向前，尽量对齐到就近行首（避免切断句子）
+        int bs = Math.max(0, cs - Math.max(0, beforeChars));
+        int nl = cleaned.lastIndexOf('\n', cs);
+        if (nl >= bs && nl < cs) {
+            bs = nl + 1;
+        }
+        boolean beforeTruncated = bs > 0;
+        String before = bs < cs ? cleaned.substring(bs, cs).strip() : "";
+        if (beforeTruncated && !before.isEmpty()) {
+            before = "…" + before;
+        }
+
+        // after 窗口：从 chunkEnd 向后，尽量对齐到行尾
+        int ae = Math.min(len, ce + Math.max(0, afterChars));
+        int nl2 = cleaned.indexOf('\n', ce);
+        if (nl2 >= 0 && nl2 <= ae && nl2 >= ce) {
+            ae = nl2;
+        }
+        boolean afterTruncated = ae < len;
+        String after = ce < ae ? cleaned.substring(ce, ae).strip() : "";
+        if (afterTruncated && !after.isEmpty()) {
+            after = after + "…";
+        }
+
+        return new DocContextVO(doc.getId(), doc.getFilename(), before, highlight, after);
+    }
+
     /** 重新向量化（P1）：对 READY/FAILED 文档重新入库；PARSING 中拒绝避免并发管道。 */
     public void reprocess(Long id) {
         KbDocument doc = requireDoc(id);
@@ -173,6 +216,29 @@ public class DocumentService {
         doc.setStatus(Constants.DOC_PARSING);
         documentMapper.updateById(doc);
         pipeline.ingest(id);
+    }
+
+    /**
+     * 一键重新向量化（P1）：对指定知识库下所有 READY/FAILED 文档重新入库；
+     * 正在 PARSING 的文档跳过（避免并发管道）。返回本次触发重新向量化的文档数。
+     */
+    public int reprocessAll(Long kbId) {
+        kbService.requireKb(kbId);
+        List<KbDocument> docs = documentMapper.selectList(new QueryWrapper<KbDocument>()
+                        .eq("kb_id", kbId)
+                        .ne("status", Constants.DOC_PARSING))
+                .stream().filter(access::canRead).toList();
+        int triggered = 0;
+        for (KbDocument doc : docs) {
+            if (!access.canRead(doc)) {
+                continue;
+            }
+            doc.setStatus(Constants.DOC_PARSING);
+            documentMapper.updateById(doc);
+            pipeline.ingest(doc.getId());
+            triggered++;
+        }
+        return triggered;
     }
 
     /** 修改文档权限/所属部门（P1）：更新行后异步重向量化，使 Milvus metadata 生效。 */

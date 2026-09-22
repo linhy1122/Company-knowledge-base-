@@ -17,6 +17,7 @@ plan/项目实施计划.md
 backend/target/
 backend/volumes/
 backend/run.log
+backend/storage/documents/
 
 # Local configuration, dependencies and generated evidence
 .env
@@ -38,3 +39,4 @@ backend/storage/
 !项目文档/系统设计说明书.docx
 .idea/compiler.xml
 backend/src/main/resources/application.yml
+

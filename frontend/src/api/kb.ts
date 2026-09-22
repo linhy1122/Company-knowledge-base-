@@ -36,6 +36,15 @@ export interface DocumentChunk {
   similarity: number
 }
 
+/** 文档原文上下文（GET /api/documents/{id}/context 返回项，功能扩展01） */
+export interface DocContext {
+  documentId: number
+  filename: string
+  before: string
+  highlight: string
+  after: string
+}
+
 /** 部门（GET /api/departments 返回项） */
 export interface Department {
   id: number
@@ -108,9 +117,23 @@ export function getDocumentChunks(id: number, config?: { silent?: boolean }) {
   return http.get<DocumentChunk[]>(`/documents/${id}/chunks`, undefined, config)
 }
 
+/** 文档原文上下文（功能扩展01：引用溯源高亮；cleaned_text 未就绪时返回 400） */
+export function getDocumentContext(
+  id: number,
+  p: { chunkStart?: number; chunkEnd?: number },
+  config?: { silent?: boolean }
+) {
+  return http.get<DocContext>(`/documents/${id}/context`, p, config)
+}
+
 /** 重新向量化 */
 export function reprocessDocument(id: number) {
   return http.post<ProcessResult>(`/documents/${id}/reprocess`)
+}
+
+/** 一键重新向量化某知识库下所有已导入文档（返回触发数量） */
+export function reprocessAllDocuments(kbId: number) {
+  return http.post<number>(`/kb/${kbId}/documents/reprocess-all`)
 }
 
 /** 修改文档权限 / 所属部门 */

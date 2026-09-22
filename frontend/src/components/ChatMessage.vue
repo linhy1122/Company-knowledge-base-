@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 消息气泡（模块⑤⑥）：用户 / AI 消息、来源引用、拒答标识、赞/踩评价（P1）
-import { computed, reactive } from 'vue'
+import { computed, defineComponent, h, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CaretBottom, CaretTop, CircleClose, Loading } from '@element-plus/icons-vue'
+import { CircleClose, Loading } from '@element-plus/icons-vue'
 import SourceCard from '@/components/SourceCard.vue'
 import { submitFeedback, type Source } from '@/api/conversation'
 import { renderMarkdown } from '@/utils/markdown'
@@ -22,6 +22,42 @@ export interface ChatMessageItem {
 }
 
 const props = defineProps<{ message: ChatMessageItem }>()
+
+// 自定义赞/踩图标（Element Plus 无内置 thumb 图标，使用内联 SVG）
+const ThumbUp = /* @__PURE__ */ defineComponent({
+  name: 'ThumbUp',
+  render: () =>
+    h(
+      'svg',
+      {
+        viewBox: '0 0 1024 1024',
+        width: '16',
+        height: '16',
+        fill: 'currentColor',
+        xmlns: 'http://www.w3.org/2000/svg'
+      },
+      h('path', {
+        d: 'M858.24 442.88a57.6 57.6 0 0 1 41.14-16.64H896v307.2h-64c-21.76 0-39.68 8.96-57.6 16.64-24.96 11.52-49.92 22.4-74.88 22.4H520.96c-40.96 0-81.92-3.2-121.6 11.52l-34.56 13.44c-12.8 4.8-25.6 6.4-38.4 4.8V448h57.6c24.96 0 51.2-19.2 67.2-44.8 17.92-30.72 32-64 40.96-97.28 6.4-24.96 12.8-52.48 16.64-77.44 3.2-24.96 12.8-48 32-66.56 17.92-17.92 48-22.4 67.2 0 11.52 12.8 17.92 32 21.76 50.56 4.8 25.6 8.96 51.2 20.48 76.8a350.72 350.72 0 0 0 88.96 137.6zM435.2 832h320c30.72 0 60.8-6.4 89.6-21.12V409.6H691.2c-59.52-27.52-95.36-70.4-117.12-115.2-10.24-24.96-17.92-54.4-25.6-83.2-4.8-16.64-9.6-34.56-17.92-50.56-6.4-12.8-22.4-14.08-32-3.2-11.52 12.8-17.92 30.72-19.2 46.08-2.56 22.4-7.68 52.48-12.8 78.08-8.96 40.96-24.96 76.8-44.8 110.08-16.64 30.72-48 41.6-78.08 41.6h-20.48v331.48zM384 409.6h-38.4A64 64 0 0 0 281.6 473.6v300.8c0 35.2 28.8 64 64 64h38.4V409.6zM128 409.6h64v417.28h-64a32 32 0 0 1-32-32v-353.28c0-17.92 14.08-32 32-32z'
+      })
+    )
+})
+const ThumbDown = /* @__PURE__ */ defineComponent({
+  name: 'ThumbDown',
+  render: () =>
+    h(
+      'svg',
+      {
+        viewBox: '0 0 1024 1024',
+        width: '16',
+        height: '16',
+        fill: 'currentColor',
+        xmlns: 'http://www.w3.org/2000/svg'
+      },
+      h('path', {
+        d: 'M858.24 581.12a57.6 57.6 0 0 1-41.14 16.64H896V582.4h0v-307.2h-64c-21.76 0-39.68-8.96-57.6-16.64-24.96-11.52-49.92-22.4-74.88-22.4H520.96c-40.96 0-81.92 3.2-121.6-11.52l-34.56-13.44c-12.8-4.8-25.6-6.4-38.4-4.8V576h57.6c24.96 0 51.2 19.2 67.2 44.8 17.92 30.72 32 64 40.96 97.28 6.4 24.96 12.8 52.48 16.64 77.44 3.2 24.96 12.8 48 32 66.56 17.92 17.92 48 22.4 67.2 0 11.52-12.8 17.92-32 21.76-50.56 4.8-25.6 8.96-51.2 20.48-76.8a350.72 350.72 0 0 0 88.96-137.6zM435.2 192h320c30.72 0 60.8 6.4 89.6 21.12v422.4H691.2c-59.52 27.52-95.36 70.4-117.12 115.2-10.24 24.96-17.92 54.4-25.6 83.2-4.8 16.64-9.6 34.56-17.92 50.56-6.4 12.8-22.4 14.08-32 3.2-11.52-12.8-17.92-30.72-19.2-46.08-2.56-22.4-7.68-52.48-12.8-78.08-8.96-40.96-24.96-76.8-44.8-110.08-16.64-30.72-48-41.6-78.08-41.6h-20.48V192zM384 614.4h-38.4A64 64 0 0 0 281.6 550.4V249.6c0-35.2 28.8-64 64-64h38.4v428.8zM128 614.4h64V197.12h-64a32 32 0 0 0-32 32v353.28c0 17.92 14.08 32 32 32z'
+      })
+    )
+})
 
 // 已评价记录：模块级共享，切换会话 / 重新渲染后仍保留本次会话内的评价状态
 const ratings = reactive(new Map<number, 'UP' | 'DOWN'>())
@@ -108,7 +144,7 @@ async function rate(value: 'UP' | 'DOWN') {
         <el-tooltip content="回答有帮助" placement="top">
           <el-button
             link
-            :icon="CaretTop"
+            :icon="ThumbUp"
             :type="rating === 'UP' ? 'success' : ''"
             :disabled="!!rating"
             @click="rate('UP')"
@@ -117,7 +153,7 @@ async function rate(value: 'UP' | 'DOWN') {
         <el-tooltip content="回答有误" placement="top">
           <el-button
             link
-            :icon="CaretBottom"
+            :icon="ThumbDown"
             :type="rating === 'DOWN' ? 'danger' : ''"
             :disabled="!!rating"
             @click="rate('DOWN')"

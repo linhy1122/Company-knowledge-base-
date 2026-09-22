@@ -2,6 +2,7 @@ package com.corpedia.controller;
 
 import com.corpedia.common.Result;
 import com.corpedia.dto.request.DocumentPermissionRequest;
+import com.corpedia.dto.response.DocContextVO;
 import com.corpedia.dto.response.DocumentChunkVO;
 import com.corpedia.dto.response.DocumentVO;
 import com.corpedia.dto.response.ProcessResultVO;
@@ -87,6 +88,17 @@ public class DocumentController {
         return Result.ok(documentService.listChunks(id));
     }
 
+    /** 功能扩展01：文档原文上下文（引用溯源高亮）。chunkStart/chunkEnd 为高亮区间，before/after 为上下文窗口长度。 */
+    @Operation(summary = "文档原文上下文", description = "按 chunk 字符区间返回前/高亮/后三段；cleaned_text 未就绪返回 400")
+    @GetMapping("/documents/{id}/context")
+    public Result<DocContextVO> context(@Parameter(description = "文档 id") @PathVariable Long id,
+                                        @Parameter(description = "高亮区间起点") @RequestParam(required = false) Integer chunkStart,
+                                        @Parameter(description = "高亮区间终点") @RequestParam(required = false) Integer chunkEnd,
+                                        @Parameter(description = "前文窗口长度") @RequestParam(defaultValue = "800") int before,
+                                        @Parameter(description = "后文窗口长度") @RequestParam(defaultValue = "800") int after) {
+        return Result.ok(documentService.getContext(id, chunkStart, chunkEnd, before, after));
+    }
+
     /** 重新向量化（SYS_ADMIN / DEPT_ADMIN）。 */
     @Operation(summary = "重新向量化", description = "对 READY/FAILED 文档重新解析分块嵌入（PARSING 中拒绝）")
     @PostMapping("/documents/{id}/reprocess")
@@ -94,6 +106,15 @@ public class DocumentController {
         permissionService.requireDocManage(UserContextHolder.get());
         documentService.reprocess(id);
         return Result.ok(new ProcessResultVO(id, Constants.DOC_PARSING));
+    }
+
+    /** 一键重新向量化（SYS_ADMIN / DEPT_ADMIN）：对知识库下所有 READY/FAILED 文档重新入库，PARSING 跳过。 */
+    @Operation(summary = "一键重新向量化知识库", description = "对指定知识库下所有 READY/FAILED 文档重新解析分块嵌入（PARSING 中的跳过）")
+    @PostMapping("/kb/{kbId}/documents/reprocess-all")
+    public Result<Integer> reprocessAll(@Parameter(description = "知识库 id") @PathVariable Long kbId) {
+        permissionService.requireDocManage(UserContextHolder.get());
+        int triggered = documentService.reprocessAll(kbId);
+        return Result.ok(triggered);
     }
 
     /** 修改文档权限/所属部门（SYS_ADMIN / DEPT_ADMIN），异步重向量化生效。 */

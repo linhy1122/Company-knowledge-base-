@@ -4,20 +4,27 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ElInput } from 'element-plus'
-import { Promotion, MagicStick } from '@element-plus/icons-vue'
+import { Promotion, MagicStick, Folder } from '@element-plus/icons-vue'
 import ConversationList from '@/components/ConversationList.vue'
 import ChatMessage, { type ChatMessageItem } from '@/components/ChatMessage.vue'
 import {
   listConversations,
   createConversation,
   deleteConversation,
+  updateConversation,
+  setConversationArchived,
+  forkConversation,
   getConversationMessages,
   sendMessage,
-  type Conversation
+  streamMessage,
+  type Source,
+  type Conversation,
+  type ConvScope
 } from '@/api/conversation'
 
 const conversations = ref<Conversation[]>([])
 const currentId = ref<number | null>(null)
+const scope = ref<ConvScope>('active')
 const messages = ref<ChatMessageItem[]>([])
 const loadingList = ref(false)
 const loadingHistory = ref(false)
@@ -30,9 +37,14 @@ const msgListRef = ref<HTMLElement | null>(null)
 let uidSeed = 0
 const nextUid = () => ++uidSeed
 
-const currentTitle = computed(
-  () => conversations.value.find((c) => c.id === currentId.value)?.title || '新会话'
+// 顶栏标题 inline 重命名
+const editingTitle = ref(false)
+const titleDraft = ref('')
+
+const currentConv = computed(
+  () => conversations.value.find((c) => c.id === currentId.value) || null
 )
+const currentTitle = computed(() => currentConv.value?.title || '新会话')
 const canSend = computed(() => draft.value.trim().length > 0 && !sending.value)
 
 /* ---------------- 列表 / 历史 ---------------- */
@@ -40,7 +52,7 @@ const canSend = computed(() => draft.value.trim().length > 0 && !sending.value)
 async function loadConversations() {
   loadingList.value = true
   try {
-    conversations.value = await listConversations()
+    conversations.value = await listConversations(scope.value)
     // 默认选中最近会话（列表按 id 倒序，首个即最新）
     if (currentId.value == null && conversations.value.length > 0) {
       await selectConversation(conversations.value[0].id)
@@ -110,6 +122,96 @@ async function handleDelete(id: number) {
   }
 }
 
+/* ---------------- 重命名 / 归档 / 续接 / scope ---------------- */
+
+function startRenameTitle() {
+  titleDraft.value = currentTitle.value
+  editingTitle.value = true
+}
+async function commitRenameTitle() {
+  const id = currentId.value
+  const title = titleDraft.value.trim()
+  editingTitle.value = false
+  if (!id || !title || title === currentConv.value?.title) return
+  await updateConversation(id, { title })
+  const conv = conversations.value.find((c) => c.id === id)
+  if (conv) conv.title = title
+}
+
+async function handleRename(id: number, title: string) {
+  try {
+    await updateConversation(id, { title })
+    const conv = conversations.value.find((c) => c.id === id)
+    if (conv) conv.title = title
+    ElMessage.success('已重命名')
+  } catch {
+    ElMessage.error('重命名失败')
+  }
+}
+
+async function handleArchive(id: number, archived: boolean) {
+  if (sending.value) return
+  if (archived && currentId.value === id) {
+    try {
+      await ElMessageBox.confirm('归档后将从「进行中」隐藏，可到「已归档」中恢复或继续提问。', '归档会话', {
+        type: 'info',
+        confirmButtonText: '归档',
+        cancelButtonText: '取消'
+      })
+    } catch {
+      return
+    }
+  }
+  try {
+    await setConversationArchived(id, archived)
+    ElMessage.success(archived ? '会话已归档' : '会话已恢复')
+  } catch {
+    ElMessage.error('操作失败')
+    return
+  }
+  // 从当前列表移除；若是当前会话则切走
+  const idx = conversations.value.findIndex((c) => c.id === id)
+  if (idx >= 0) conversations.value.splice(idx, 1)
+  if (currentId.value === id) {
+    currentId.value = null
+    messages.value = []
+    if (conversations.value.length > 0) {
+      await selectConversation(conversations.value[0].id)
+    }
+  }
+}
+
+async function handleFork(id: number) {
+  if (sending.value) return
+  if (id !== currentId.value) {
+    // 复制的是其他会话，先切到该会话以保证历史一致（前端仅需新会话 id）
+    await selectConversation(id)
+  }
+  try {
+    const conv = await forkConversation(id)
+    // 续接产生的是「进行中」会话；若当前在已归档 tab，切回 active 以保证可见
+    if (scope.value === 'archived') {
+      scope.value = 'active'
+      await loadConversations()
+    } else {
+      conversations.value.unshift(conv)
+    }
+    currentId.value = conv.id
+    await selectConversation(conv.id)
+    ElMessage.success('已创建续接会话')
+  } catch {
+    ElMessage.error('续接失败')
+  }
+}
+
+async function handleScopeChange(s: ConvScope) {
+  if (scope.value === s) return
+  scope.value = s
+  currentId.value = null
+  messages.value = []
+  await loadConversations()
+}
+
 /* ---------------- 发送 / 多轮 ---------------- */
 
 async function send() {
@@ -133,15 +235,74 @@ async function send() {
     messages.value.push({ uid: nextUid(), role: 'USER', content: text })
     messages.value.push({ uid: placeholderUid, role: 'ASSISTANT', content: '', loading: true })
     await scrollToBottom()
-    const res = await sendMessage({ conversationId: convId, content: text })
-    replaceMessage(placeholderUid, {
-      uid: placeholderUid,
-      id: res.messageId,
-      role: 'ASSISTANT',
-      content: res.content,
-      sources: res.sources || null,
-      answered: res.answered
-    })
+
+    // 流式优先（打字机 + 先渲染来源）；失败则回退非流式完整返回
+    let acc = ''
+    let sources: Source[] | null = null
+    let sourcesAnswered: boolean | undefined
+    let settled = false
+    try {
+      await streamMessage(convId, text, {
+        onSources: (d) => {
+          sources = d.sources || null
+          sourcesAnswered = d.answered
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            role: 'ASSISTANT',
+            content: acc,
+            loading: true,
+            sources,
+            answered: sourcesAnswered
+          })
+        },
+        onDelta: (t) => {
+          acc += t
+          // 有增量即停止“生成中”占位，展示逐字拼接文本（打字机）
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            role: 'ASSISTANT',
+            content: acc,
+            loading: acc.length === 0,
+            sources,
+            answered: sourcesAnswered
+          })
+          scrollToBottom()
+        },
+        onDone: (d) => {
+          settled = true
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            id: d.messageId,
+            role: 'ASSISTANT',
+            content: d.content,
+            sources,
+            answered: d.answered
+          })
+        },
+        onError: () => {
+          settled = true
+          replaceMessage(placeholderUid, {
+            uid: placeholderUid,
+            role: 'ASSISTANT',
+            content: '回答失败，请稍后重试',
+            error: true
+          })
+        }
+      })
+    } catch {
+      // 流式不可用（404/断连）→ 回退非流式
+      if (!settled) {
+        const res = await sendMessage({ conversationId: convId, content: text })
+        replaceMessage(placeholderUid, {
+          uid: placeholderUid,
+          id: res.messageId,
+          role: 'ASSISTANT',
+          content: res.content,
+          sources: res.sources || null,
+          answered: res.answered
+        })
+      }
+    }
     // 首轮问答后会话标题被后端自动填充，刷新列表标题
     if (isFirstExchange) {
       await loadConversations()
@@ -187,15 +348,49 @@ onMounted(loadConversations)
           :items="conversations"
           :current-id="currentId"
           :loading="loadingList"
+          :scope="scope"
           @create="createNewConversation"
           @select="selectConversation"
           @delete="handleDelete"
+          @rename="handleRename"
+          @fork="handleFork"
+          @archive="handleArchive"
+          @update:scope="handleScopeChange"
         />
       </el-aside>
 
       <el-main class="chat-main">
         <div class="chat-topbar">
-          <span class="chat-conv-title">{{ currentTitle }}</span>
+          <template v-if="editingTitle">
+            <el-input
+              v-model="titleDraft"
+              size="small"
+              class="title-edit-input"
+              autofocus
+              maxlength="50"
+              @blur="commitRenameTitle"
+              @keyup.enter="commitRenameTitle"
+              @keyup.esc="editingTitle = false"
+            />
+          </template>
+          <template v-else>
+            <span class="chat-conv-title" :title="'点击重命名'" @click="startRenameTitle">
+              {{ currentTitle }}
+            </span>
+          </template>
+          <div class="topbar-actions">
+            <el-tooltip content="归档本会话">
+              <el-button
+                :icon="Folder"
+                size="small"
+                text
+                :disabled="!currentId"
+                @click="currentId != null && handleArchive(currentId, true)"
+              >
+                归档
+              </el-button>
+            </el-tooltip>
+          </div>
         </div>
 
         <!-- 消息区 -->
@@ -285,10 +480,23 @@ onMounted(loadConversations)
 }
 .chat-topbar {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--el-border-color-lighter);
   font-size: 15px;
   font-weight: 600;
+}
+.chat-conv-title {
+  cursor: pointer;
+}
+.title-edit-input {
+  width: 280px;
+}
+.topbar-actions {
+  flex: none;
 }
 .msg-list {
   flex: 1;
@@ -346,3 +554,4 @@ onMounted(loadConversations)
   color: var(--el-text-color-placeholder);
 }
 </style>
+
