@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 知识库列表页（模块② P0）：列表 / 新建 / 删除，接 /api/kb
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -23,7 +23,15 @@ const canManage = (departmentId?: number | null) => userStore.isSysAdmin ||
 
 const list = ref<KnowledgeBase[]>([])
 const loading = ref(false)
+const nameKeyword = ref('')
 const departments = ref<Department[]>([])
+
+const filteredList = computed(() => {
+  const keyword = nameKeyword.value.trim().toLowerCase()
+  return list.value.filter((kb) =>
+    !keyword || (kb.name ?? '').toLowerCase().includes(keyword)
+  )
+})
 
 const permissionOptions: { label: string; value: PermissionLevel }[] = [
   { label: '公开', value: 'PUBLIC' },
@@ -156,11 +164,12 @@ onMounted(() => {
       <template #header>
         <div class="kb-header">
           <span class="kb-title">知识库管理</span>
+          <el-input v-model="nameKeyword" clearable placeholder="搜索知识库名称" style="width: 180px" />
           <el-button v-if="userStore.isAdmin" type="primary" @click="openCreate">新建知识库</el-button>
         </div>
       </template>
 
-      <el-table v-loading="loading" :data="list" stripe>
+      <el-table v-loading="loading" :data="filteredList" stripe>
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
