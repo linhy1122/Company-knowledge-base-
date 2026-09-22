@@ -5,6 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * 自定义 RAG 参数（application.yml corpedia.rag.*）。
+ * 
+ *  * 自定义 RAG 参数（application.yml corpedia.rag.*）。
+ *  * 自定义 RAG 参数（application.yml corpedia.rag.*）。
  */
 @Data
 @ConfigurationProperties(prefix = "corpedia.rag")
